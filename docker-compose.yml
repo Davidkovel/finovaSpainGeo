@@ -1,0 +1,25 @@
+services:
+  postgress:
+    image: postgres:16
+    container_name: binomo_postgres_geo
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: binomo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: binomo_backend_geo
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgress
+
+volumes:
+  postgres_data:
