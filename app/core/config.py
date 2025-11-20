@@ -46,7 +46,7 @@ class ServerConfig:
     @staticmethod
     def from_env() -> "ServerConfig":
         address = getenv("SERVER_ADDRESS", "0.0.0.0")
-        port = getenv("SERVER_PORT", 8080)
+        port = getenv("SERVER_PORT", 8081)
 
         return ServerConfig(SERVER_ADDRESS=address, SERVER_PORT=port)
 

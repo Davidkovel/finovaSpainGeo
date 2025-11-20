@@ -1,5 +1,5 @@
 services:
-  postgress:
+  postgres:
     image: postgres:16
     container_name: binomo2_postgres
     restart: always
@@ -17,9 +17,9 @@ services:
     container_name: binomo2_backend
     restart: always
     ports:
-      - "8081:8080"   # другой порт хоста для backend
+      - "8081:8081"   # другой порт хоста для backend
     depends_on:
-      - postgress
+      - postgres
 
 volumes:
   postgres2_data:
