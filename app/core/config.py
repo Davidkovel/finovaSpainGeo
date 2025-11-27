@@ -98,6 +98,6 @@ def create_config() -> Config:
         auth_token_config=SecurityConfig.from_env(),
         telegram_config=TelegramConfig(
             bot_token="8323214050:AAESG_QqwVk0TF0qSM8gO2L9c3wwNUhppEQ",
-            chat_ids=[-4737587408]
+            chat_ids=[-1003352049865]
         )
     )
