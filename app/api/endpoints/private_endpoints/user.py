@@ -1,3 +1,4 @@
+import base64
 import os
 from decimal import Decimal
 from typing import Annotated
@@ -5,8 +6,9 @@ from typing import Annotated
 import aiofiles
 from dishka import FromDishka
 from dishka.integrations.fastapi import DishkaRoute
-from fastapi import APIRouter, Query, status, Depends, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Query, status, Depends, UploadFile, File, Form, BackgroundTasks, logger
 from fastapi.responses import JSONResponse
+from pathlib import Path
 
 from app.api.endpoints.public_endoints.auth import oauth2_scheme
 from app.core.exceptions import EntityUnauthorizedError, InsufficientBalanceError
@@ -263,6 +265,7 @@ async def send_invoice_to_tg(
             content={"message": f"Внутренняя ошибка сервера: {str(e)}"}
         )
 
+
 async def send_invoice_background(telegram_interactor, user_id, email, amount, file_path):
     try:
         await telegram_interactor.send_invoice_notification(
@@ -277,6 +280,7 @@ async def send_invoice_background(telegram_interactor, user_id, email, amount, f
         if os.path.exists(file_path):
             os.remove(file_path)
 
+
 @router.get("/card_number")
 async def get_card_number_for_payment(
         card_interactor: FromDishka[CardIteractor]
@@ -284,16 +288,45 @@ async def get_card_number_for_payment(
     try:
         card_response = await card_interactor.get_bank_card()
 
+        # Читаем фото из файла, если оно есть
+        photo_base64 = None
+        photo_mime_type = None
+
+        if card_response.photo_path:
+            try:
+                file_path = Path(card_response.photo_path)
+                if file_path.exists():
+                    with open(file_path, 'rb') as f:
+                        photo_bytes = f.read()
+                        photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
+
+                    # Определяем MIME тип по расширению
+                    extension = file_path.suffix.lower()
+                    mime_types = {
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.png': 'image/png',
+                        '.gif': 'image/gif',
+                        '.webp': 'image/webp'
+                    }
+                    photo_mime_type = mime_types.get(extension, 'image/jpeg')
+            except Exception as e:
+                logger.logger.error(f"Error reading photo file: {e}")
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "status": "success",
                 "card_number": card_response.card_number,
-                "card_holder_name": card_response.card_holder_name
+                "card_holder_name": card_response.card_holder_name,
+                "phone_number": card_response.phone_number,
+                "photo_base64": photo_base64,
+                "photo_mime_type": photo_mime_type
             }
         )
 
     except Exception as e:
+        logger.logger.error(f"Error in get_card_number_for_payment: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"message": f"Внутренняя ошибка сервера: {str(e)}"}

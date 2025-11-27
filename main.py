@@ -4,6 +4,7 @@ import uvicorn
 from dishka.integrations.fastapi import setup_dishka
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from app.api.endpoints import root_router
 from app.core.build import create_async_container

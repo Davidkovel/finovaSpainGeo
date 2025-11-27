@@ -76,12 +76,16 @@ class BalanceResponse(BaseModel):
     balance: Decimal
 
 
-class BankCardResponse(BaseModel):
-    card_number: str
-
 class BankCardAndHolderResponse(BaseModel):
     card_number: str
     card_holder_name: str
+    phone_number: str
+    photo_path: str | None
+
+class BankCardResponse(BaseModel):
+    card_number: str
+    phone_number: str
+    photo_path: Optional[str] = None
 
 
 class UpdateBalanceMultiplyRequest(BaseModel):
