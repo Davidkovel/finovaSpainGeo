@@ -12,13 +12,15 @@ from pathlib import Path
 
 from app.api.endpoints.public_endoints.auth import oauth2_scheme
 from app.core.exceptions import EntityUnauthorizedError, InsufficientBalanceError
+from app.database.repositories.positionHistory import PositionHistoryRepository
 from app.database.repositories.user import UserRepository
 from app.interactors.auth import OAuth2PasswordBearerUserInteractor
 from app.interactors.cardIteractor import CardIteractor
 from app.interactors.moneyIteractor import MoneyIteractor
+from app.interactors.positionHistory import PositionHistoryInteractor
 from app.schemas.error import ErrorResponse
 from app.schemas.user import DepositRequest, UpdateBalanceRequest, InvoiceToTelegramRequest, \
-    UpdateBalanceMultiplyRequest
+    UpdateBalanceMultiplyRequest, PositionHistorySchema
 
 from app.interactors.telegramIteractor import TelegramInteractor
 
@@ -209,6 +211,57 @@ async def update_balance(
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content=ErrorResponse(message=exc.detail).dict(),
+        )
+
+
+
+@router.get("/get_positions")
+async def get_positions(
+        token: Annotated[str, Depends(oauth2_scheme)],
+        oauth_user: FromDishka[OAuth2PasswordBearerUserInteractor],
+        position_repo: FromDishka[PositionHistoryRepository],
+):
+    try:
+        sub_data = await oauth_user(token)
+        user_id = sub_data["user_id"]
+        email = sub_data["email"]
+
+        positions = await position_repo.get_positions_for_user(user_id)
+
+        return positions
+
+    except Exception as ex:
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"Server error: {str(ex)}"}
+        )
+
+
+@router.post("/save_position_history")
+async def save_position_history(
+        schema: PositionHistorySchema,
+        token: Annotated[str, Depends(oauth2_scheme)],
+        oauth_user: FromDishka[OAuth2PasswordBearerUserInteractor],
+        position_history_interactor: FromDishka[PositionHistoryInteractor]
+):
+    try:
+        sub_data = await oauth_user(token)
+        user_id = sub_data["user_id"]
+        email = sub_data["email"]
+
+        print(schema)
+        saved = await position_history_interactor.save_position(user_id, schema)
+        print(saved)
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Position saved", "id": str(saved.id)}
+        )
+
+    except Exception as ex:
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"Server error: {str(ex)}"}
         )
 
 

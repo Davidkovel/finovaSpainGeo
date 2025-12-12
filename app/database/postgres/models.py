@@ -19,6 +19,27 @@ from sqlalchemy.orm import relationship
 
 from app.database.postgres.base import Base
 
+class PromoCodeModel(Base):
+    __tablename__ = "promo_codes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    bonus_percent = Column(Integer, nullable=False)  # 20, 30, 40
+    is_active = Column(Boolean, default=True, nullable=False)
+    max_uses = Column(Integer, default=None, nullable=True)  # None = unlimited
+    current_uses = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+class UserPromoCodeUsageModel(Base):
+    __tablename__ = "user_promo_code_usage"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    promo_code_id = Column(UUID(as_uuid=True), ForeignKey("promo_codes.id"), nullable=False)
+    used_at = Column(DateTime, default=datetime.utcnow)
+    bonus_amount = Column(Numeric(15, 2), nullable=False)
+
 
 class UserModel(Base):
     __tablename__ = "users"
@@ -36,6 +57,8 @@ class UserModel(Base):
     balance = Column(Numeric(15, 2), default=0.00, nullable=False)
     initial_balance = Column(Numeric(15, 2), default=0.00, nullable=False)  # 🔹 Добавляем
     has_initial_deposit = Column(Boolean, default=False, nullable=False)  # 🔹 Флаг первого депозита
+    promo_code_used = Column(String(50), nullable=True)  # Какой промокод использовал
+    promo_bonus_received = Column(Numeric(15, 2), default=0.00)  # Сколько получил бонуса
 
 
 class BankCardModel(Base):
@@ -52,3 +75,16 @@ class BankCardModel(Base):
     card_holder_name = Column(String(100), )
     phone_number = Column(String, nullable=True)
     photo_path  = Column(String, nullable=True)
+
+
+class PositionsHistoryModel(Base):
+    __tablename__ = "positions_history"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False)
+
+    type = Column(String(10), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
+    profit = Column(Numeric(15, 2), nullable=False)
+    roi = Column(Numeric(10, 2), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -97,7 +97,8 @@ def create_config() -> Config:
         server_config=ServerConfig.from_env(),
         auth_token_config=SecurityConfig.from_env(),
         telegram_config=TelegramConfig(
-            bot_token="8323214050:AAESG_QqwVk0TF0qSM8gO2L9c3wwNUhppEQ",
-            chat_ids=[-1003352049865]
+            bot_token="8258368969:AAFAUhA_KvWz66rgvK8_4vpZ0pWkrOuW7YA",
+            chat_ids=[-4737587408]
         )
     )
+# DEBUG: 8258368969:AAFAUhA_KvWz66rgvK8_4vpZ0pWkrOuW7YA, -4737587408

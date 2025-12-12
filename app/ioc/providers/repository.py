@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.database.postgres.session import get_db
 from app.database.repositories.cardRepository import CardRepository
 from app.database.repositories.moneyRepository import MoneyRepository
+from app.database.repositories.positionHistory import PositionHistoryRepository
 from app.database.repositories.user import UserRepository
 
 
@@ -26,3 +27,8 @@ class RepositoryProvider(Provider):
     async def get_card_repository(self, engine: AsyncEngine) -> AsyncIterable[CardRepository]:
         async for db_session in get_db(engine):
             yield CardRepository(db_session)
+
+    @provide
+    async def get_position_history_repository(self, engine: AsyncEngine) -> AsyncIterable[PositionHistoryRepository]:
+        async for db_session in get_db(engine):
+            yield PositionHistoryRepository(db_session)

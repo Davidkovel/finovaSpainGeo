@@ -82,6 +82,7 @@ class BankCardAndHolderResponse(BaseModel):
     phone_number: str
     photo_path: str | None
 
+
 class BankCardResponse(BaseModel):
     card_number: str
     phone_number: str
@@ -91,6 +92,7 @@ class BankCardResponse(BaseModel):
 class UpdateBalanceMultiplyRequest(BaseModel):
     amount_change: Decimal
     multiply_times: Decimal
+
 
 class UpdateBalanceRequest(BaseModel):
     amount_change: Decimal
@@ -106,7 +108,14 @@ class InvoiceToTelegramResponse(BaseModel):
     message: str
     invoice_id: Optional[str] = None
 
-#
+
+class PositionHistorySchema(BaseModel):
+    type: str  # buy / sell / ai
+    amount: float
+    profit: float
+    roi: float
+
+
 # class TransactionHistory(BaseModel):
 #     id: UUID
 #     user_id: UUID
