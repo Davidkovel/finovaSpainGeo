@@ -6,13 +6,15 @@ from app.core.exceptions import (
     InvalidCredentialsError,
 )
 from app.core.security import Security
+from app.database.repositories.PromoCodeRepository import PromoCodeRepository
 from app.database.repositories.user import UserRepository
 from app.schemas.user import UserLogin, UserRegister
 
 
 class SignUpUserInteractor:
-    def __init__(self, user_repository: UserRepository, security: Security):
+    def __init__(self, user_repository: UserRepository, promo_repo: PromoCodeRepository, security: Security):
         self.user_repository = user_repository
+        self.promo_repo = promo_repo
         self.security = security
 
     async def __call__(self, user_register: UserRegister) -> str:
@@ -20,7 +22,20 @@ class SignUpUserInteractor:
         if exist_user:
             raise EmailAlreadyExistsError
 
-        new_user = await self.user_repository.create_new_user(user_register, self.security)
+        promo_bonus_percent = 0
+        promo_code_valid = None
+
+        if user_register.promo_code:
+            validation = await self.promo_repo.validate_promo_code(user_register.promo_code)
+            if validation["valid"]:
+                promo_bonus_percent = validation["bonus_percent"]
+                promo_code_valid = user_register.promo_code
+
+        if promo_code_valid:
+            await self.promo_repo.increment_promo_usage(promo_code_valid)
+
+        new_user = await self.user_repository.create_new_user(user_register, self.security, promo_code=promo_code_valid,
+                                                              promo_bonus_percent=promo_bonus_percent)
 
         # Создаём JWT-токен, включая ID и email
         token_data = {

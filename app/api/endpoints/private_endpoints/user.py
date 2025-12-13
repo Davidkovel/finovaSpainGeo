@@ -10,8 +10,13 @@ from fastapi import APIRouter, Query, status, Depends, UploadFile, File, Form, B
 from fastapi.responses import JSONResponse
 from pathlib import Path
 
+from select import select
+
 from app.api.endpoints.public_endoints.auth import oauth2_scheme
 from app.core.exceptions import EntityUnauthorizedError, InsufficientBalanceError
+from app.database.postgres.models import UserModel
+from app.database.repositories import PromoCodeRepository
+from app.database.repositories.moneyRepository import MoneyRepository
 from app.database.repositories.positionHistory import PositionHistoryRepository
 from app.database.repositories.user import UserRepository
 from app.interactors.auth import OAuth2PasswordBearerUserInteractor
@@ -20,7 +25,7 @@ from app.interactors.moneyIteractor import MoneyIteractor
 from app.interactors.positionHistory import PositionHistoryInteractor
 from app.schemas.error import ErrorResponse
 from app.schemas.user import DepositRequest, UpdateBalanceRequest, InvoiceToTelegramRequest, \
-    UpdateBalanceMultiplyRequest, PositionHistorySchema
+    UpdateBalanceMultiplyRequest, PositionHistorySchema, DepositWithPromoSchema, PromoCodeValidateSchema
 
 from app.interactors.telegramIteractor import TelegramInteractor
 
@@ -214,7 +219,6 @@ async def update_balance(
         )
 
 
-
 @router.get("/get_positions")
 async def get_positions(
         token: Annotated[str, Depends(oauth2_scheme)],
@@ -262,6 +266,132 @@ async def save_position_history(
         return JSONResponse(
             status_code=500,
             content={"message": f"Server error: {str(ex)}"}
+        )
+
+
+@router.post("/validate_promo_code", tags=["Promo"])
+async def validate_promo_code(
+        schema: PromoCodeValidateSchema,
+        token: Annotated[str, Depends(oauth2_scheme)],
+        oauth_user: FromDishka[OAuth2PasswordBearerUserInteractor],
+        promo_repo: FromDishka[PromoCodeRepository]
+):
+    """Проверить валидность промокода"""
+    try:
+        sub_data = await oauth_user(token)
+        user_id = sub_data["user_id"]
+
+        # Проверяем не использовал ли уже
+        if await promo_repo.check_user_promo_usage(user_id):
+            return JSONResponse(
+                status_code=400,
+                content={"valid": False, "error": "Ya has usado un código promocional"}
+            )
+
+        # Валидируем код
+        validation = await promo_repo.validate_promo_code(schema.code)
+
+        return JSONResponse(
+            status_code=200,
+            content=validation
+        )
+
+    except Exception as ex:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(ex)}
+        )
+
+
+@router.post("/deposit_with_promo", tags=["Promo"])
+async def deposit_with_promo(
+        schema: DepositWithPromoSchema,
+        token: Annotated[str, Depends(oauth2_scheme)],
+        oauth_user: FromDishka[OAuth2PasswordBearerUserInteractor],
+        promo_repo: FromDishka[PromoCodeRepository],
+        money_repo: FromDishka[MoneyRepository]
+):
+    """Депозит с промокодом (включая бонус при регистрации)"""
+    try:
+        sub_data = await oauth_user(token)
+        user_id = sub_data["user_id"]
+        base_amount = schema.amount
+
+        # 🔹 Проверяем есть ли промокод при регистрации
+        query = select(UserModel).where(UserModel.id == user_id)
+        result = await promo_repo.db_session.execute(query)
+        user = result.scalar_one_or_none()
+
+        # 🔹 Если у пользователя есть промокод при регистрации и он еще не получал бонус
+        if user and user.promo_code_used and user.promo_bonus_received == 0:
+            result = await promo_repo.apply_registration_promo(
+                user_id=user_id,
+                promo_code=user.promo_code_used,
+                deposit_amount=base_amount
+            )
+
+            if result["success"]:
+                final_amount = Decimal(str(result["total_amount"]))
+                new_balance = await money_repo.deposit_money(user_id, final_amount)
+
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "message": "¡Depósito exitoso! Bonificación de registro aplicada",
+                        "base_amount": float(base_amount),
+                        "bonus_percent": result["bonus_percent"],
+                        "bonus_amount": result["bonus_amount"],
+                        "total_deposited": result["total_amount"],
+                        "new_balance": float(new_balance),
+                        "registration_bonus": True
+                    }
+                )
+
+        # 🔹 Обычный депозит (если промокод в запросе)
+        if schema.promo_code:
+            result = await promo_repo.apply_promo_code(
+                user_id=user_id,
+                promo_code=schema.promo_code,
+                deposit_amount=base_amount
+            )
+
+            if not result["success"]:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": result["error"]}
+                )
+
+            final_amount = Decimal(str(result["total_amount"]))
+            new_balance = await money_repo.deposit_money(user_id, final_amount)
+
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "message": "Depósito exitoso con bonificación",
+                    "base_amount": float(base_amount),
+                    "bonus_percent": result["bonus_percent"],
+                    "bonus_amount": result["bonus_amount"],
+                    "total_deposited": result["total_amount"],
+                    "new_balance": float(new_balance)
+                }
+            )
+        else:
+            # Обычный депозит без промокода
+            new_balance = await money_repo.deposit_money(user_id, base_amount)
+
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "message": "Depósito exitoso",
+                    "deposited": float(base_amount),
+                    "new_balance": float(new_balance)
+                }
+            )
+
+    except Exception as ex:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(ex)}
         )
 
 

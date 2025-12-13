@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import Field, conint, BaseModel, condecimal
+from pydantic import Field, conint, BaseModel, condecimal, validator
 
 from app.schemas.base import CustomBaseModel
 from app.schemas.common import (
@@ -45,6 +45,7 @@ class UserRegister(BaseModel):
     name: UserFirstName
     email: Email
     password: Password
+    promo_code: Optional[str] = None
     # name: str
     # email: str
     # password: str
@@ -114,6 +115,23 @@ class PositionHistorySchema(BaseModel):
     amount: float
     profit: float
     roi: float
+
+class PromoCodeValidateSchema(BaseModel):
+    code: str
+
+    @validator('code')
+    def validate_code(cls, v):
+        return v.strip().upper()
+
+class DepositWithPromoSchema(BaseModel):
+    amount: Decimal
+    promo_code: Optional[str] = None
+
+    @validator('promo_code')
+    def validate_promo(cls, v):
+        if v:
+            return v.strip().upper()
+        return None
 
 
 # class TransactionHistory(BaseModel):

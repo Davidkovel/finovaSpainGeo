@@ -12,8 +12,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dishka import AsyncContainer
+from sqlalchemy import update, select
+from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import TelegramConfig
+from app.database.postgres.models import UserModel
+from app.database.repositories import PromoCodeRepository
 from app.interactors.cardIteractor import CardIteractor
 from app.interactors.moneyIteractor import MoneyIteractor
 
@@ -75,7 +80,7 @@ class TelegramInteractor:
                 _, _, user_id, amount_str = callback.data.split("_", 3)
                 amount = Decimal(amount_str)
 
-                new_caption = f"❌ Запрос на вывод *{amount:,.2f} PEN* пользователю `{user_id}` отклонен."
+                new_caption = f"❌ Запрос на вывод *{amount:,.2f} USD* пользователю `{user_id}` отклонен."
                 await callback.message.edit_caption(
                     caption=new_caption,
                     reply_markup=None  # Убираем кнопки
@@ -101,13 +106,83 @@ class TelegramInteractor:
 
                 # Получаем MoneyIteractor из контейнера
                 async with self.container() as request_container:
+                    from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+                    from sqlalchemy.orm import sessionmaker
                     from app.interactors.moneyIteractor import MoneyIteractor
-                    money_interactor = await request_container.get(MoneyIteractor)
-                    await money_interactor.update_balance(user_id, amount)
-                    await money_interactor.set_initial_balance(user_id, amount)
 
-                # Редактируем caption сообщения с фото
-                new_caption = f"✅ Баланс пользователя {user_id} обновлен на {amount:,} PEN"
+                    # Получаем engine (он в APP scope)
+                    engine = await request_container.get(AsyncEngine)
+
+                    # Создаем собственную сессию для этого callback
+                    async_session = sessionmaker(
+                        engine,
+                        class_=AsyncSession,
+                        expire_on_commit=False
+                    )
+
+                    async with async_session() as session:
+                        # Получаем пользователя
+                        query = select(UserModel).where(UserModel.id == user_id)
+                        result = await session.execute(query)
+                        user = result.scalar_one_or_none()
+
+                        if not user:
+                            await callback.answer("Пользователь не найден")
+                            return
+
+                        final_amount = amount
+                        bonus_message = ""
+
+                        # Проверяем промокод
+                        print(
+                            f"PROMO CHECK | code={user.promo_code_used} "
+                            f"percent={user.registration_promo_percent} "
+                            f"received={user.promo_bonus_received}"
+                        )
+                        if user.promo_code_used and user.promo_bonus_received == 0:
+                            bonus_percent = user.registration_promo_percent or 0
+                            bonus_amount = (amount * bonus_percent) / 100
+                            final_amount = amount + bonus_amount
+
+                            # Обновляем что бонус получен
+                            await session.execute(
+                                update(UserModel)
+                                .where(UserModel.id == user_id)
+                                .values(promo_bonus_received=bonus_amount)
+                            )
+                            await session.commit()
+
+                            bonus_message = (
+                                f"\n🎁 Бонус по промокоду {user.promo_code_used}: "
+                                f"+{bonus_amount:,.2f} USD (+{bonus_percent}%)"
+                            )
+                            print(f"✅ Применен промокод {user.promo_code_used}: "
+                                  f"{amount} + {bonus_amount} = {final_amount}")
+
+                        # Обновляем баланс
+                        current_balance = user.balance or Decimal('0')
+                        new_balance = current_balance + final_amount
+
+                        await session.execute(
+                            update(UserModel)
+                            .where(UserModel.id == user_id)
+                            .values(
+                                balance=new_balance,
+                                initial_balance=final_amount if not user.has_initial_deposit else user.initial_balance,
+                                has_initial_deposit=True
+                            )
+                        )
+                        await session.commit()
+
+                # Редактируем caption
+                new_caption = (
+                    f"✅ *ПОПОЛНЕНИЕ ПОДТВЕРЖДЕНО*\n\n"
+                    f"👤 Пользователь: {user_id}\n"
+                    f"📧 Email: {user.email}\n"
+                    f"💵 Депозит: {amount:,.2f} USD"
+                    f"{bonus_message}\n"
+                    f"💰 *Итого зачислено: {final_amount:,.2f} USD*"
+                )
 
                 # Способ 1: Редактируем только подпись
                 await callback.message.edit_caption(
@@ -304,7 +379,7 @@ class TelegramInteractor:
             amount: Decimal,
             file_path: str,
     ):
-        formatted_amount = f"{amount:,.2f} PEN"
+        formatted_amount = f"{amount:,.2f} USD"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -319,31 +394,62 @@ class TelegramInteractor:
             ]
         ])
 
+        try:
+            async with self.container() as request_container:
+                engine = await request_container.get(AsyncEngine)
+
+                # Создаем собственную сессию для этого callback
+                async_session = sessionmaker(
+                    engine,
+                    class_=AsyncSession,
+                    expire_on_commit=False
+                )
+
+                async with async_session() as session:
+                    query = select(UserModel).where(UserModel.id == user_id)
+                    result = await session.execute(query)
+                    user = result.scalar_one_or_none()
+
+                    promo_info = ""
+                    if user and user.promo_code_used and user.promo_bonus_received == 0:
+                        bonus_percent = user.registration_promo_percent or 0
+                        bonus_amount = (amount * bonus_percent) / 100
+                        total_with_bonus = amount + bonus_amount
+                        promo_info = (
+                            f"\n\n🎁 *ПРОМОКОД АКТИВЕН*\n"
+                            f"Код: `{user.promo_code_used}`\n"
+                            f"Бонус: +{bonus_percent}% (+{bonus_amount:,.2f} USD)\n"
+                            f"💰 *Итого к зачислению: {total_with_bonus:,.2f} USD*"
+                        )
+        except Exception as e:
+            print(f"⚠️ Ошибка получения промокода: {e}")
+            promo_info = ""
+
+
         caption_text = (
             f"💰 *НОВОЕ ПОПОЛНЕНИЕ БАЛАНСА*\n\n"
             f"👤 *Пользователь:* {user_id}\n"
             f"📧 *Email:* {user_email}\n"
-            f"💵 *Сумма:* {formatted_amount}\n"
+            f"💵 *Сумма депозита:* {formatted_amount}\n"
             f"⏰ *Время:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"{promo_info}"
         )
 
         success_count = 0
         for chat_id in self.chat_ids:
             try:
-
-                with open(file_path, "rb") as photo_file:
-                    photo = FSInputFile(file_path)
-                    await self.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo,
-                        caption=caption_text,
-                        reply_markup=keyboard,
-                        parse_mode="Markdown"
-                    )
-
+                from aiogram.types import FSInputFile
+                photo = FSInputFile(file_path)
+                await self.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=photo,
+                    caption=caption_text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
                 success_count += 1
             except Exception as e:
-                print(f"Error sending to chat {chat_id}: {e}")
+                print(f"❌ Error sending to chat {chat_id}: {e}")
                 continue
 
         return success_count > 0
@@ -359,7 +465,7 @@ class TelegramInteractor:
     ) -> bool:
         """Отправка уведомления о запросе на вывод средств"""
 
-        formatted_amount = f"{amount:,.2f} PEN"
+        formatted_amount = f"{amount:,.2f} USD"
 
         # keyboard = InlineKeyboardMarkup(
         #     inline_keyboard=[

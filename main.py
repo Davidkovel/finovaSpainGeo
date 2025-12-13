@@ -4,12 +4,16 @@ import uvicorn
 from dishka.integrations.fastapi import setup_dishka
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.staticfiles import StaticFiles
 
 from app.api.endpoints import root_router
 from app.core.build import create_async_container
 from app.core.config import create_config
 from app.core.exceptions import setup_exception_handlers
+from app.database.postgres.session import get_db
+from app.database.repositories import PromoCodeRepository
+from app.interactors.promo_init import create_default_promo_codes
 from app.interactors.telegramIteractor import TelegramInteractor
 from app.ioc.registry import get_providers
 
@@ -26,6 +30,15 @@ async def lifespan(app: FastAPI):
     telegram_interactor.set_container(container)
     telegram_interactor.set_container_card(container)
     await telegram_interactor.start_polling()
+    print("✅ Application started successfully")
+
+    engine = await container.get(AsyncEngine)
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        await create_default_promo_codes(session, PromoCodeRepository)
+
+    print("✅ Promo codes initialized")
     print("✅ Application started successfully")
 
     yield  # Приложение работает

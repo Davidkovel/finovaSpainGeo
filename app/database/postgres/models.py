@@ -57,8 +57,9 @@ class UserModel(Base):
     balance = Column(Numeric(15, 2), default=0.00, nullable=False)
     initial_balance = Column(Numeric(15, 2), default=0.00, nullable=False)  # 🔹 Добавляем
     has_initial_deposit = Column(Boolean, default=False, nullable=False)  # 🔹 Флаг первого депозита
-    promo_code_used = Column(String(50), nullable=True)  # Какой промокод использовал
-    promo_bonus_received = Column(Numeric(15, 2), default=0.00)  # Сколько получил бонуса
+    promo_code_used = Column(String(50), nullable=True)  # Код при регистрации
+    registration_promo_percent = Column(Integer, default=0)  # Процент бонуса
+    promo_bonus_received = Column(Numeric(15, 2), default=0.00)  # Получено бонуса
 
 
 class BankCardModel(Base):
