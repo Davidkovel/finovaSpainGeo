@@ -11,6 +11,7 @@ from app.api.endpoints import root_router
 from app.core.build import create_async_container
 from app.core.config import create_config
 from app.core.exceptions import setup_exception_handlers
+from app.database.init_db import init_database
 from app.database.postgres.session import get_db
 from app.database.repositories import PromoCodeRepository
 from app.interactors.promo_init import create_default_promo_codes
@@ -33,6 +34,10 @@ async def lifespan(app: FastAPI):
     print("✅ Application started successfully")
 
     engine = await container.get(AsyncEngine)
+
+    await init_database(engine)
+    print("✅ Database initialized")
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     async with AsyncSession(engine, expire_on_commit=False) as session:
