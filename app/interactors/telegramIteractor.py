@@ -223,7 +223,6 @@ class TelegramInteractor:
 
         @self.dp.message(F.text == "/set_card_photo")
         async def set_card_photo_handler(message: types.Message):
-            logger.debug('adsdasdasdasdsad')
             if not message.reply_to_message or not message.reply_to_message.photo:
                 await message.reply("Отправьте команду /set_card_photo В ОТВЕТ на фото!", parse_mode=None)
                 return
@@ -244,10 +243,15 @@ class TelegramInteractor:
                     card_iteractor = await request_container.get(CardIteractor)
                     card_data = await card_iteractor.get_bank_card()
 
-                    await card_iteractor.set_bank_card_with_photo(card_data.card_number,
-                                                                  card_data.card_holder_name,
-                                                                  card_data.phone_number,
-                                                                  saved_path)
+                    await card_iteractor.set_bank_card_with_photo(
+                        photo_path=saved_path,
+                        bank_name=card_data.bank_name,
+                        account_type=card_data.account_type,
+                        account_number=card_data.account_number,
+                        card_holder_name=card_data.card_holder_name,
+                        holder_id=card_data.holder_id,
+                        phone_number=card_data.phone_number
+                    )
 
                 await message.reply("Фото успешно сохранено!", parse_mode=None)
 
@@ -257,97 +261,103 @@ class TelegramInteractor:
 
         @self.dp.message(F.text.startswith("/set_card "))  # Обратите внимание на пробел
         async def set_card_handler(message: types.Message, bot):
-            parts = message.text.split()
+            """
+            Поддерживаемые форматы:
 
-            if len(parts) < 4:
-                await message.reply(
-                    "⚠️ Формат:\n"
-                    "1️⃣ /set_card 1234 5678 9012 3456 Ivan Ivanov +7999...\n"
-                    "2️⃣ /set_card CCI 92200300000327457291 Elisa Angela Pasco Acosta +51993789016",
-                    parse_mode=None
-                )
-                return
+            1. Banco Pichincha:
+               /set_card Banco Pichincha | Cuenta de ahorro | 2215000531 | Carlos Santiago Sarabia Garces | 0605104458 | +593999123456
 
-            second_part = parts[1].upper() if len(parts) > 1 else ""
+            2. CCI (старый формат):
+               /set_card CCI 92200300000327457291 Elisa Angela Pasco Acosta +51993789016
 
-            # Список известных банковских префиксов
-            bank_prefixes = {"CCI", "BANCO", "BANK", "BBVA", "SANTANDER", "INTERBANK", "BCP", "SCOTIABANK"}
+            3. Card (старый формат):
+               /set_card 1234 5678 9012 3456 Ivan Ivanov +7999123456
+            """
+            text = message.text.replace("/set_card ", "").strip()
 
-            # Определяем формат: CCI или обычная карта
-            if second_part in bank_prefixes:
-                # Формат CCI: /set_card CCI 92200300000327457291 Elisa Angela Pasco Acosta +51993789016
-                if len(parts) < 5:
+            # Проверяем формат с разделителями |
+            if "|" in text:
+                # Новый формат: Banco | Tipo | Numero | Nombre | CI | Telefono
+                parts = [p.strip() for p in text.split("|")]
+
+                if len(parts) < 4:
                     await message.reply(
-                        "❌ Неверный формат CCI. Используйте:\n"
-                        "/set_card CCI [номер_счета] [Имя Фамилия] [телефон]",
+                        "⚠️ Формат для Banco Pichincha:\n"
+                        "/set_card Banco Pichincha | Cuenta de ahorro | 2215000531 | "
+                        "Carlos Santiago Sarabia Garces | 0605104458 | +593999123456\n\n"
+                        "Минимум: Банк | Тип счета | Номер | Имя",
                         parse_mode=None
                     )
                     return
 
-                cci_prefix = parts[1]  # "CCI"
-                account_number = parts[2]  # Номер счета
-                phone_number = parts[-1]  # Телефон (последний элемент)
+                bank_name = parts[0]
+                account_type = parts[1] if len(parts) > 1 else "Cuenta de ahorro"
+                account_number = parts[2] if len(parts) > 2 else ""
+                card_holder_name = parts[3] if len(parts) > 3 else ""
+                holder_id = parts[4] if len(parts) > 4 else None
+                phone_number = parts[5] if len(parts) > 5 else None
 
-                # Имя - все между номером счета и телефоном
-                name_parts = parts[3:-1]
-                if not name_parts:
+                # Валидация
+                if not account_number:
+                    await message.reply("❌ Укажите номер счета", parse_mode=None)
+                    return
+
+                if not card_holder_name:
                     await message.reply("❌ Укажите имя держателя счета", parse_mode=None)
                     return
 
-                card_holder_name = " ".join(name_parts)
-                card_number = f"{cci_prefix} {account_number}"
+                try:
+                    async with self.card_repository() as request_container:
+                        from app.interactors.cardIteractor import CardIteractor
+                        card_iteractor = await request_container.get(CardIteractor)
+
+                        await card_iteractor.set_bank_card(
+                            bank_name=bank_name,
+                            account_type=account_type,
+                            account_number=account_number,
+                            card_holder_name=card_holder_name,
+                            holder_id=holder_id,
+                            phone_number=phone_number
+                        )
+
+                    response_text = (
+                        f"✅ Реквизиты банка сохранены:\n\n"
+                        f"🏦 Banco: {bank_name}\n"
+                        f"📋 Tipo: {account_type}\n"
+                        f"💳 Número: {account_number}\n"
+                        f"👤 Titular: {card_holder_name}\n"
+                    )
+
+                    if holder_id:
+                        response_text += f"🆔 CI/DNI: {holder_id}\n"
+                    if phone_number:
+                        response_text += f"📞 Teléfono: {phone_number}\n"
+
+                    response_text += "\nℹ️ Фото карты не установлено. Используйте /set_card_photo"
+
+                    await message.reply(response_text, parse_mode=None)
+
+                except Exception as e:
+                    logger.error(f"Error in set_card_handler: {e}")
+                    await message.reply("❌ Ошибка при сохранении данных", parse_mode=None)
 
             else:
-                # Формат обычной карты: /set_card 1234 5678 9012 3456 Ivan Ivanov +7999
-                if len(parts) < 6:
+                # Старые форматы (CCI и обычная карта) - оставляем как было
+                parts = text.split()
+
+                if len(parts) < 4:
                     await message.reply(
-                        "⚠️ Формат: /set_card 1234 5678 9012 3456 Ivan Ivanov +7999...",
+                        "⚠️ Используйте один из форматов:\n\n"
+                        "1️⃣ Banco Pichincha:\n"
+                        "/set_card Banco Pichincha | Cuenta de ahorro | 2215000531 | "
+                        "Carlos Sarabia | 0605104458 | +593999123456\n\n"
+                        "2️⃣ CCI:\n"
+                        "/set_card CCI 92200300000327457291 Nombre Apellido +51999123456\n\n"
+                        "3️⃣ Card:\n"
+                        "/set_card 1234 5678 9012 3456 Nombre Apellido +7999123456",
                         parse_mode=None
                     )
                     return
-
-                # НОМЕР КАРТЫ (части 1-4)
-                card_parts = parts[1:5]
-                if not all(p.isdigit() and len(p) == 4 for p in card_parts):
-                    await message.reply(
-                        "❌ Неверный номер карты. Используйте формат: 1234 5678 9012 3456",
-                        parse_mode=None
-                    )
-                    return
-
-                card_number = " ".join(card_parts)
-                phone_number = parts[-1]
-
-                # ИМЯ (все части между номером карты и телефоном)
-                name_parts = parts[5:-1]
-                if not name_parts:
-                    await message.reply("❌ Укажите имя держателя карты", parse_mode=None)
-                    return
-
-                card_holder_name = " ".join(name_parts)
-
-            # Валидация телефона (базовая)
-            if not phone_number.startswith('+') and not phone_number[0].isdigit():
-                await message.reply("❌ Номер телефона должен начинаться с + или цифры", parse_mode=None)
-                return
-
-            try:
-                async with self.card_repository() as request_container:
-                    card_iteractor = await request_container.get(CardIteractor)
-                    await card_iteractor.set_bank_card(card_number, card_holder_name, phone_number)
-
-                await message.reply(
-                    f"✅ Данные карты сохранены:\n\n"
-                    f"💳 Карта: {card_number}\n"
-                    f"👤 Владелец: {card_holder_name}\n"
-                    f"📞 Телефон: {phone_number}\n\n"
-                    f"ℹ️ Фото карты не установлено. Используйте /set_card_photo",
-                    parse_mode=None
-                )
-
-            except Exception as e:
-                logger.error(f"Error in set_card_handler: {e}")
-                await message.reply("❌ Ошибка при сохранении данных карты. Проверьте логи.", parse_mode=None)
 
         async def save_photo_locally(photo_file_id: str, bot) -> str:
 

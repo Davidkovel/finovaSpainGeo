@@ -85,8 +85,12 @@ class BankCardAndHolderResponse(BaseModel):
 
 
 class BankCardResponse(BaseModel):
-    card_number: str
-    phone_number: str
+    bank_name: str
+    account_type: str
+    account_number: str
+    card_holder_name: str
+    holder_id: Optional[str] = None
+    phone_number: Optional[str] = None
     photo_path: Optional[str] = None
 
 

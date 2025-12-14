@@ -466,8 +466,9 @@ async def send_invoice_background(telegram_interactor, user_id, email, amount, f
 
 @router.get("/card_number")
 async def get_card_number_for_payment(
-        card_interactor: FromDishka[CardIteractor]
+    card_interactor: FromDishka[CardIteractor]
 ):
+    """Получить реквизиты банка для пополнения"""
     try:
         card_response = await card_interactor.get_bank_card()
 
@@ -483,7 +484,7 @@ async def get_card_number_for_payment(
                         photo_bytes = f.read()
                         photo_base64 = base64.b64encode(photo_bytes).decode('utf-8')
 
-                    # Определяем MIME тип по расширению
+                    # Определяем MIME тип
                     extension = file_path.suffix.lower()
                     mime_types = {
                         '.jpg': 'image/jpeg',
@@ -494,17 +495,32 @@ async def get_card_number_for_payment(
                     }
                     photo_mime_type = mime_types.get(extension, 'image/jpeg')
             except Exception as e:
-                logger.logger.error(f"Error reading photo file: {e}")
+                print(f"Error reading photo: {e}")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "status": "success",
-                "card_number": card_response.card_number,
+                # 🔹 ВСЕ НОВЫЕ ПОЛЯ
+                "bank_name": card_response.bank_name,
+                "account_type": card_response.account_type,
+                "account_number": card_response.account_number,
                 "card_holder_name": card_response.card_holder_name,
+                "holder_id": card_response.holder_id,
                 "phone_number": card_response.phone_number,
+                # Старые поля (для обратной совместимости)
+                "card_number": card_response.account_number,  # alias
+                # Фото
                 "photo_base64": photo_base64,
                 "photo_mime_type": photo_mime_type
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "status": "error",
+                "message": f"Error: {str(e)}"
             }
         )
 

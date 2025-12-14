@@ -1,12 +1,13 @@
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Any, Coroutine
 
 from dns.e164 import query
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.postgres.models import BankCardModel
+
 
 class CardRepository:
     def __init__(self, db_session: AsyncSession):
@@ -23,19 +24,11 @@ class CardRepository:
     #
     #     return card_number
 
-    async def get_card_data(self) -> tuple[str, str, str, str | None]:
-        query = select(BankCardModel.card_number,
-                       BankCardModel.card_holder_name,
-                       BankCardModel.phone_number,
-                       BankCardModel.photo_path)
+    async def get_card_data(self) -> BankCardModel | None:
+        """Получить реквизиты банка"""
+        query = select(BankCardModel).limit(1)
         result = await self.db_session.execute(query)
-        card_data = result.first()
-
-        # Если карты нет в базе, возвращаем дефолтные значения
-        if card_data is None:
-            return "8600 0000 0000 0000", "Card Holder Name", "+1234567890", None
-
-        return card_data[0], card_data[1], card_data[2], card_data[3]
+        return result.scalar_one_or_none()
 
     async def get_card_number(self) -> str:
         card_number, _, _, _ = await self.get_card_data()
@@ -53,41 +46,64 @@ class CardRepository:
         _, _, _, photo_file_id = await self.get_card_data()
         return photo_file_id
 
-    async def set_card_data(self, card_number: str, card_holder_name: str, phone_number: str = None,
-                            photo_path: str = None) -> tuple[str, str, str, str]:
-        # Сначала проверяем, есть ли уже запись
+    async def set_card_data(
+            self,
+            bank_name: str,
+            account_type: str,
+            account_number: str,
+            card_holder_name: str,
+            holder_id: str = None,
+            phone_number: str = None,
+            photo_path: str = None
+    ) -> BankCardModel:  # 🔹 ИЗМЕНЕНО: возвращаем модель
+        """Сохранить или обновить реквизиты банка"""
+
+        # Проверяем существующую запись
         existing_query = select(BankCardModel)
         existing_result = await self.db_session.execute(existing_query)
         existing_card = existing_result.scalar_one_or_none()
 
         if existing_card:
+            # Обновляем существующую
             if photo_path is None:
                 photo_path = existing_card.photo_path
 
-            # Обновляем существующую запись
             query = (
                 update(BankCardModel)
                 .where(BankCardModel.id == existing_card.id)
                 .values(
-                    card_number=card_number,
+                    bank_name=bank_name,
+                    account_type=account_type,
+                    account_number=account_number,
                     card_holder_name=card_holder_name,
+                    holder_id=holder_id,
                     phone_number=phone_number,
                     photo_path=photo_path,
                 )
             )
             await self.db_session.execute(query)
+            await self.db_session.commit()
+
+            # Получаем обновленную запись
+            result = await self.db_session.execute(
+                select(BankCardModel).where(BankCardModel.id == existing_card.id)
+            )
+            return result.scalar_one()
         else:
-            # Создаем новую запись
+            # Создаем новую
             new_card = BankCardModel(
-                card_number=card_number,
+                bank_name=bank_name,
+                account_type=account_type,
+                account_number=account_number,
                 card_holder_name=card_holder_name,
+                holder_id=holder_id,
                 phone_number=phone_number,
                 photo_path=photo_path
             )
             self.db_session.add(new_card)
-
-        await self.db_session.commit()
-        return card_number, card_holder_name, phone_number, photo_path
+            await self.db_session.commit()
+            await self.db_session.refresh(new_card)
+            return new_card
 
     # async def set_card_number(self, card_number: str) -> str:
     #     current_holder_name = await self.get_card_holder_name()

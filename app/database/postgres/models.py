@@ -72,10 +72,17 @@ class BankCardModel(Base):
         nullable=False,
         default=uuid.uuid4,
     )
-    card_number = Column(String(100), default="1111 2222 3333 4444", nullable=False)
-    card_holder_name = Column(String(100), )
-    phone_number = Column(String, nullable=True)
+    bank_name = Column(String(200), default="Banco Pichincha", nullable=False)  # 🔹 Название банка
+    account_type = Column(String(100), default="Cuenta de ahorro transaccional")  # 🔹 Тип счета
+    account_number = Column(String(100), nullable=False)  # 🔹 Номер счета
+    card_holder_name = Column(String(200), nullable=False)  # 🔹 Имя держателя
+    holder_id = Column(String(50), nullable=True)  # 🔹 CI/DNI/Passport
+    phone_number = Column(String(50), nullable=True)  # 🔹 Телефон
+
     photo_path  = Column(String, nullable=True)
+
+    # Устаревшее поле (для обратной совместимости)
+    card_number = Column(String(100), nullable=True)
 
 
 class PositionsHistoryModel(Base):

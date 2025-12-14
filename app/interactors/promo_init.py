@@ -11,7 +11,7 @@ async def create_default_promo_codes(session: AsyncSession, repo_class):
         {"code": "FINOVA30", "bonus_percent": 30, "max_uses": None},
         {"code": "FINOVA40", "bonus_percent": 40, "max_uses": None},
         {"code": "WELCOME25", "bonus_percent": 25, "max_uses": None},
-        {"code": "VIP50", "bonus_percent": 50, "max_uses": 10},
+        {"code": "VIP50", "bonus_percent": 50, "max_uses": None},
     ]
 
     for promo_data in promo_codes:
