@@ -11,8 +11,10 @@ from app.interactors.auth import (
     SignInUserInteractor,
     SignUpUserInteractor, OAuth2PasswordBearerUserInteractor
 )
+from app.interactors.telegramIteractor import TelegramInteractor
 from app.schemas.error import ErrorResponse
 from app.schemas.user import UserLogin, UserRegister
+from app.utils import logger
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -23,6 +25,7 @@ router = APIRouter(route_class=DishkaRoute)
 async def user_sign_up(
         schema: UserRegister,
         auth_interactor: FromDishka[SignUpUserInteractor],
+        telegram_interactor: FromDishka[TelegramInteractor],
 ) -> Response:
     try:
         print(schema)
@@ -32,7 +35,7 @@ async def user_sign_up(
                 content=ErrorResponse(message="Request body is required").dict(),
             )
 
-        token = await auth_interactor(user_register=schema)
+        token, user_data = await auth_interactor(user_register=schema)
 
         # 🔹 Возвращаем информацию о промокоде если был использован
         promo_info = {}
@@ -41,6 +44,16 @@ async def user_sign_up(
                 "promo_code_applied": schema.promo_code,
                 "message": "Código promocional registrado. Recibirás tu bonificación en el primer depósito."
             }
+
+        try:
+            await telegram_interactor.send_registration_notification(
+                user_id=str(user_data["user_id"]),
+                user_name=schema.name,
+                user_email=schema.email,
+                promo_code=schema.promo_code
+            )
+        except Exception as e:
+            print(f"Notification error: {e}")
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,

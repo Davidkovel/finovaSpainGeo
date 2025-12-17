@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 from app.core.exceptions import (
     EmailAlreadyExistsError,
@@ -17,7 +17,7 @@ class SignUpUserInteractor:
         self.promo_repo = promo_repo
         self.security = security
 
-    async def __call__(self, user_register: UserRegister) -> str:
+    async def __call__(self, user_register: UserRegister) -> Tuple[str, dict]:
         exist_user = await self.user_repository.get_user_by_email(user_register.email)
         if exist_user:
             raise EmailAlreadyExistsError
@@ -44,7 +44,14 @@ class SignUpUserInteractor:
         }
         token = self.security.create_access_token(token_data)
 
-        return token
+        user_data = {
+            "user_id": new_user.id,
+            "name": new_user.name,
+            "email": new_user.email,
+            "promo_code": promo_code_valid
+        }
+
+        return token, user_data
 
 
 class SignInUserInteractor:

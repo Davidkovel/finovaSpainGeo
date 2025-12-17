@@ -519,6 +519,43 @@ class TelegramInteractor:
 
         return success_count > 0
 
+    async def send_registration_notification(
+            self,
+            user_id: str,
+            user_name: str,
+            user_email: str,
+            promo_code: str = None
+    ):
+        """Отправить уведомление о новой регистрации"""
+
+        promo_info = ""
+        if promo_code:
+            promo_info = f"\n🎁 *Промокод:* `{promo_code}`"
+
+        message_text = (
+            f"*НОВАЯ РЕГИСТРАЦИЯ*\n\n"
+            f"👤 *ID:* `{user_id}`\n"
+            f"✍️ *Имя:* {user_name}\n"
+            f"📧 *Email:* {user_email}\n"
+            f"📅 *Дата:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"{promo_info}"
+        )
+
+        success_count = 0
+        for chat_id in self.chat_ids:
+            try:
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message_text,
+                    parse_mode="Markdown"
+                )
+                success_count += 1
+            except Exception as e:
+                print(f"Error: {e}")
+
+        return success_count > 0
+
+
     async def start_polling(self):
         """Запуск бота для обработки callback'ов"""
         if self._is_running:
